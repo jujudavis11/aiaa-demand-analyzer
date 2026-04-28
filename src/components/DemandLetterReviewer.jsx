@@ -109,15 +109,43 @@ export default function DemandLetterReviewer() {
         })
       });
       clearInterval(iv);
-      if (!res.ok) {
-        throw new Error("Analysis request failed");
+
+      let data = null;
+      try {
+        data = await res.json();
+      } catch {
+        data = null;
       }
-      const data = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 404) {
+          setError("Backend route not found: /api/analyze-demand-letter.");
+          return;
+        }
+
+        const code = data?.code;
+        if (code === "INVALID_PDF") {
+          setError("Invalid PDF: please upload a valid PDF demand letter.");
+          return;
+        }
+        if (code === "MISSING_ENV") {
+          setError("Backend configuration error: missing ANTHROPIC_API_KEY environment variable.");
+          return;
+        }
+        if (code === "AI_PROVIDER_ERROR") {
+          setError(`AI provider error: ${data?.message || "request failed"}`);
+          return;
+        }
+
+        setError(data?.message || "Analysis failed due to a backend error.");
+        return;
+      }
+
       const raw = data?.resultText || data?.content?.find?.(b => b.type === "text")?.text || "";
       setResult(JSON.parse(String(raw).replace(/```json|```/g, "").trim()));
     } catch (e) {
       clearInterval(iv);
-      setError("Analysis failed. Ensure you uploaded a valid PDF demand letter and that your backend API route is configured.");
+      setError("Analysis failed due to a network or parsing error.");
     } finally { setLoading(false); }
   }, []);
 
@@ -169,7 +197,7 @@ export default function DemandLetterReviewer() {
           <>
             <div style={{ textAlign: "center", marginBottom: 36 }}>
               <div style={{ fontFamily: "Georgia, serif", fontSize: 28, fontWeight: 700, background: `linear-gradient(135deg, ${B.white}, ${B.silver} 50%, ${B.blueBright})`, WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", marginBottom: 10, lineHeight: 1.25 }}>
-                Review Any Demand Letter in 15 Seconds
+                Review Any Demand Letter in Minutes, Not Hours
               </div>
               <p style={{ color: B.silverDim, fontSize: 15, fontFamily: "sans-serif" }}>Upload a PI demand letter PDF — get a full attorney-level review instantly.</p>
             </div>
