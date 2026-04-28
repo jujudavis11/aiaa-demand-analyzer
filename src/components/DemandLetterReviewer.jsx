@@ -80,7 +80,7 @@ const Badge = ({ severity }) => {
   return <span style={{ background: s.bg, color: s.color, border: `1px solid ${s.color}50`, borderRadius: 3, fontSize: 9, fontWeight: 800, padding: "2px 7px", letterSpacing: "0.1em", fontFamily: "monospace" }}>{s.label}</span>;
 };
 
-export default function App() {
+export default function DemandLetterReviewer() {
   const [file, setFile] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -99,23 +99,25 @@ export default function App() {
     const iv = setInterval(() => { i = (i + 1) % msgs.length; setMsg(msgs[i]); }, 2200);
     try {
       const b64 = await toB64(f);
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+      const res = await fetch("/api/analyze-demand-letter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514", max_tokens: 1000, system: SYSTEM_PROMPT,
-          messages: [{ role: "user", content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-            { type: "text", text: "Analyze this demand letter and return the JSON review." }
-          ]}]
+          systemPrompt: SYSTEM_PROMPT,
+          fileBase64: b64,
+          fileType: "application/pdf"
         })
       });
       clearInterval(iv);
+      if (!res.ok) {
+        throw new Error("Analysis request failed");
+      }
       const data = await res.json();
-      const raw = data.content?.find(b => b.type === "text")?.text || "";
-      setResult(JSON.parse(raw.replace(/```json|```/g, "").trim()));
+      const raw = data?.resultText || data?.content?.find?.(b => b.type === "text")?.text || "";
+      setResult(JSON.parse(String(raw).replace(/```json|```/g, "").trim()));
     } catch (e) {
       clearInterval(iv);
-      setError("Analysis failed. Ensure you uploaded a valid PDF demand letter.");
+      setError("Analysis failed. Ensure you uploaded a valid PDF demand letter and that your backend API route is configured.");
     } finally { setLoading(false); }
   }, []);
 
