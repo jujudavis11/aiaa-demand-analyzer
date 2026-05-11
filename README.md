@@ -56,3 +56,46 @@ Set this in Vercel (Project Settings → Environment Variables):
 - `INTERNAL_ERROR` → unexpected backend failure.
 
 The frontend maps these to user-friendly errors, including a dedicated message if the backend route is not found (`404`).
+
+
+## HeyGen video generator
+
+This project now includes a basic HeyGen video generation flow.
+
+### Environment variables
+
+Set this on the server (local env / Vercel env settings):
+
+- `HEYGEN_API_KEY` — used only by backend routes.
+
+Do **not** hard-code or expose this key in frontend code.
+
+### Frontend
+
+The app includes a simple form to submit:
+
+- script
+- title
+- cta
+- avatar_id
+- voice_id
+
+After submission, the frontend polls the backend until the video is `completed`, `failed`, or times out.
+
+### Backend routes
+
+- `POST /api/heygen-generate`
+  - Starts a HeyGen generation request.
+  - Expects JSON body: `{ script, title, cta, avatar_id, voice_id }`
+  - Returns: `{ job_id }`
+
+- `GET /api/heygen-status?job_id=...`
+  - Checks HeyGen status for a submitted job/video.
+  - Returns: `{ status, video_url, message }`
+
+### Result display
+
+When completed, the UI shows:
+
+- final video URL
+- optional in-page `<video>` preview player

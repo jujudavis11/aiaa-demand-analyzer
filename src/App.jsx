@@ -1,5 +1,5 @@
-import DemandLetterReviewer from './components/DemandLetterReviewer';
+import HeyGenVideoGenerator from './components/HeyGenVideoGenerator';
 
 export default function App() {
-  return <DemandLetterReviewer />;
+  return <HeyGenVideoGenerator />;
 }
