@@ -22,7 +22,7 @@ function discoverCompetitors(input: SnapshotInput, queries: string[], seed: numb
 function buildQueryResults(input: SnapshotInput, queries: string[], competitors: CompetitorDiscovery[], seed: number): QueryResult[] {
   const domain = input.websiteUrl.replace(/^https?:\/\//, '').replace('www.', '').split('/')[0].toLowerCase();
   return queries.map((query, i) => {
-    const targetMentioned = ((seed + i) % 4) !== 0;
+    const targetMentioned = (seed + i) % 4 !== 0;
     const websiteReferenced = (seed + i * 7 + domain.length) % 3 !== 1;
     const sentiment: QueryResult['sentiment'] = ['Negative', 'Neutral', 'Positive'][(seed + i) % 3] as QueryResult['sentiment'];
     return {
@@ -33,36 +33,38 @@ function buildQueryResults(input: SnapshotInput, queries: string[], competitors:
       rankingPosition: 1 + ((seed + i * 5) % 10),
       sentiment,
       trustSignals: targetMentioned ? ['Reviews present', 'Location relevance'] : ['Weak citation trail'],
-      source: (i % 2 === 0) ? 'Simulated Search Result' : 'Simulated AI Answer'
+      source: i % 2 === 0 ? 'Simulated Search Result' : 'Simulated AI Answer'
     };
   });
 }
 
-export function generateMockReport(input: SnapshotInput, dataMode: 'demo' | 'live' = 'demo'): ReportData {
-  const queries = buildQueries(input);
+export function generateReportFromResults(
+  input: SnapshotInput,
+  queryResults: QueryResult[],
+  competitorDiscoveries: CompetitorDiscovery[],
+  dataMode: 'demo' | 'live' = 'demo'
+): ReportData {
   const seed = hash(`${input.businessName}|${input.websiteUrl}|${input.city}|${input.state}|${input.industry}|${input.mainKeyword}`);
-  const competitorDiscoveries = discoverCompetitors(input, queries, seed);
-  const queryResults = buildQueryResults(input, queries, competitorDiscoveries, seed);
-
-  const mentionRate = queryResults.filter((q) => q.businessMentioned).length / queryResults.length;
-  const websiteRate = queryResults.filter((q) => q.websiteReferenced).length / queryResults.length;
-  const competitorPressure = competitorDiscoveries.reduce((a, c) => a + c.mentions, 0) / (competitorDiscoveries.length * 8);
-  const reviewSignal = (seed % 100) / 100;
-  const localRelevance = ((input.city.length + input.state.length + input.mainKeyword.length) % 100) / 100;
-  const industryMatch = ((input.industry.length + input.mainKeyword.length) % 100) / 100;
+  const mentionRate = queryResults.filter((q) => q.businessMentioned).length / Math.max(1, queryResults.length);
+  const websiteRate = queryResults.filter((q) => q.websiteReferenced).length / Math.max(1, queryResults.length);
+  const competitorPressure = competitorDiscoveries.length
+    ? competitorDiscoveries.reduce((a, c) => a + c.mentions, 0) / (competitorDiscoveries.length * 8)
+    : 0;
+  const reviewSignal = queryResults.filter((q) => q.trustSignals.some((s) => /review|rating|credential|experience/i.test(s))).length / Math.max(1, queryResults.length);
+  const localRelevance = queryResults.filter((q) => q.query.toLowerCase().includes(input.city.toLowerCase())).length / Math.max(1, queryResults.length);
+  const industryMatch = queryResults.filter((q) => q.query.toLowerCase().includes(input.industry.toLowerCase()) || q.query.toLowerCase().includes(input.mainKeyword.toLowerCase())).length / Math.max(1, queryResults.length);
   const websiteReadiness = ((input.websiteUrl.length + seed) % 100) / 100;
 
   const categoryScores = {
-    'Brand Recognition': norm(Math.round(weights.brandRecognition * (0.3 + mentionRate * 0.7)), weights.brandRecognition),
-    'AI Answer Presence': norm(Math.round(weights.aiAnswerPresence * (0.2 + mentionRate * 0.6 + websiteRate * 0.2)), weights.aiAnswerPresence),
-    'Local Market Visibility': norm(Math.round(weights.localMarketVisibility * (0.25 + localRelevance * 0.75)), weights.localMarketVisibility),
-    'Competitor Positioning': norm(Math.round(weights.competitorPositioning * (1 - competitorPressure * 0.7)), weights.competitorPositioning),
+    'Brand Recognition': norm(Math.round(weights.brandRecognition * (0.25 + mentionRate * 0.75)), weights.brandRecognition),
+    'AI Answer Presence': norm(Math.round(weights.aiAnswerPresence * (0.2 + mentionRate * 0.5 + websiteRate * 0.3)), weights.aiAnswerPresence),
+    'Local Market Visibility': norm(Math.round(weights.localMarketVisibility * (0.2 + localRelevance * 0.8)), weights.localMarketVisibility),
+    'Competitor Positioning': norm(Math.round(weights.competitorPositioning * (1 - competitorPressure * 0.75)), weights.competitorPositioning),
     'Website AI Readiness': norm(Math.round(weights.websiteAiReadiness * (0.3 + websiteReadiness * 0.7)), weights.websiteAiReadiness),
-    'Trust / Reputation Signals': norm(Math.round(weights.trustReputationSignals * (0.2 + reviewSignal * 0.5 + industryMatch * 0.3)), weights.trustReputationSignals)
+    'Trust / Reputation Signals': norm(Math.round(weights.trustReputationSignals * (0.15 + reviewSignal * 0.55 + industryMatch * 0.3)), weights.trustReputationSignals)
   };
 
   const { total } = computeScore(categoryScores);
-
   return {
     input,
     dataMode,
@@ -70,12 +72,22 @@ export function generateMockReport(input: SnapshotInput, dataMode: 'demo' | 'liv
     score: total,
     label: labelScore(total),
     categoryScores,
-    summary: `Competitors were discovered automatically based on AI/search-style queries for your market. ${input.businessName} currently appears in ${Math.round(mentionRate * 100)}% of analyzed responses in ${input.city}, ${input.state}.`,
-    strengths: ['Targeted local query coverage can be improved quickly.', `Current website citation rate is ${Math.round(websiteRate * 100)}%.`, 'A structured trust-signal strategy can improve AI recommendation frequency.'],
-    weaknesses: ['Competitor mentions are still dominant in key buyer-intent prompts.', 'Ranking consistency across query types is uneven.', 'Reputation signals are not yet optimized for AI answer engines.'],
+    summary: `Competitors were discovered automatically based on AI/search-style queries for your market. ${input.businessName} currently appears in ${Math.round(
+      mentionRate * 100
+    )}% of analyzed responses in ${input.city}, ${input.state}.`,
+    strengths: [
+      'Targeted local query coverage can be improved quickly.',
+      `Current website citation rate is ${Math.round(websiteRate * 100)}%.`,
+      'A structured trust-signal strategy can improve AI recommendation frequency.'
+    ],
+    weaknesses: [
+      'Competitor mentions are still dominant in key buyer-intent prompts.',
+      'Ranking consistency across query types is uneven.',
+      'Reputation signals are not yet optimized for AI answer engines.'
+    ],
     queryResults,
     competitorDiscoveries,
-    competitorTable: competitorDiscoveries.map((c) => ({ name: c.name, mentionRate: `${Math.round((c.mentions / queryResults.length) * 100)}%`, avgPosition: c.estimatedRank, sentiment: c.estimatedRank < 3 ? 'Positive' : 'Neutral' })),
+    competitorTable: competitorDiscoveries.map((c) => ({ name: c.name, mentionRate: `${Math.round((c.mentions / Math.max(1, queryResults.length)) * 100)}%`, avgPosition: c.estimatedRank, sentiment: c.estimatedRank < 3 ? 'Positive' : 'Neutral' })),
     missedOpportunities: ['Increase brand mentions in “best in city” prompts.', 'Strengthen website entity signals and service-page relevance.', 'Close competitor gap in comparison and reputation queries.'],
     actionPlan: [
       { phase: 'Days 1–30', actions: ['Add location + service entities with schema.', 'Refine title/meta for service and market terms.', 'Expand trust content with real proof snippets.'] },
@@ -84,4 +96,12 @@ export function generateMockReport(input: SnapshotInput, dataMode: 'demo' | 'liv
     ],
     cta: 'Want us to improve this score for you? AI Arsenal Activators can help build your AI visibility, automate lead capture, and position your business to appear in more AI-powered recommendations.'
   };
+}
+
+export function generateMockReport(input: SnapshotInput, dataMode: 'demo' | 'live' = 'demo'): ReportData {
+  const queries = buildQueries(input);
+  const seed = hash(`${input.businessName}|${input.websiteUrl}|${input.city}|${input.state}|${input.industry}|${input.mainKeyword}`);
+  const competitorDiscoveries = discoverCompetitors(input, queries, seed);
+  const queryResults = buildQueryResults(input, queries, competitorDiscoveries, seed);
+  return generateReportFromResults(input, queryResults, competitorDiscoveries, dataMode);
 }
