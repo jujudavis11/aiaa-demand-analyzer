@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body { @apply bg-charcoal text-white; }
+.print-only { display: none; }
+@media print {
+  .no-print { display: none !important; }
+  .print-only { display: block; }
+  body { background: white; color: black; }
+}
