@@ -5,7 +5,6 @@ export type SnapshotInput = {
   state: string;
   industry: string;
   mainKeyword: string;
-  competitors?: string;
   contactEmail?: string;
 };
 
@@ -17,10 +16,21 @@ export type QueryResult = {
   rankingPosition: number;
   sentiment: 'Positive' | 'Neutral' | 'Negative';
   trustSignals: string[];
+  source: string;
+};
+
+export type CompetitorDiscovery = {
+  name: string;
+  mentions: number;
+  estimatedRank: number;
+  appearedInQueries: string[];
+  targetBusinessAppeared: boolean;
 };
 
 export type ReportData = {
   input: SnapshotInput;
+  dataMode: 'demo' | 'live';
+  dataSourceStatus: string;
   score: number;
   label: string;
   categoryScores: Record<string, number>;
@@ -28,6 +38,7 @@ export type ReportData = {
   strengths: string[];
   weaknesses: string[];
   queryResults: QueryResult[];
+  competitorDiscoveries: CompetitorDiscovery[];
   competitorTable: Array<{ name: string; mentionRate: string; avgPosition: number; sentiment: string }>;
   missedOpportunities: string[];
   actionPlan: Array<{ phase: string; actions: string[] }>;

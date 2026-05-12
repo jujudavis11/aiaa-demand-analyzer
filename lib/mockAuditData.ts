@@ -1,47 +1,86 @@
 import { buildQueries } from './prompts';
-import { computeScore, weights } from './scoring';
-import { ReportData, SnapshotInput } from './types';
+import { computeScore, labelScore, weights } from './scoring';
+import { CompetitorDiscovery, QueryResult, ReportData, SnapshotInput } from './types';
 
-export function generateMockReport(input: SnapshotInput): ReportData {
-  const competitors = input.competitors?.split(',').map((c) => c.trim()).filter(Boolean) || ['Local Leader Co', 'Prime Choice Group'];
-  const queries = buildQueries(input);
+const NAME_POOL = ['Summit', 'Prime', 'Velocity', 'Pinnacle', 'Metro', 'Catalyst', 'NorthStar', 'Elite', 'Trusted', 'BluePeak'];
 
-  const queryResults = queries.map((query, i) => ({
-    query,
-    businessMentioned: i % 2 === 0,
-    websiteReferenced: i % 3 === 0,
-    competitorsMentioned: competitors.slice(0, (i % competitors.length) + 1),
-    rankingPosition: Math.min(10, 2 + i),
-    sentiment: (i % 3 === 0 ? 'Positive' : i % 3 === 1 ? 'Neutral' : 'Negative') as 'Positive' | 'Neutral' | 'Negative',
-    trustSignals: i % 2 === 0 ? ['Review volume', 'Authority mentions'] : ['Basic citations']
+const hash = (str: string) => Array.from(str).reduce((acc, ch, i) => acc + ch.charCodeAt(0) * (i + 1), 0);
+const norm = (v: number, max: number) => Math.min(max, Math.max(0, v));
+
+function discoverCompetitors(input: SnapshotInput, queries: string[], seed: number): CompetitorDiscovery[] {
+  const core = input.mainKeyword.split(' ')[0] || input.industry;
+  const generated = Array.from({ length: 4 }).map((_, i) => `${NAME_POOL[(seed + i) % NAME_POOL.length]} ${core} ${input.city}`);
+  return generated.map((name, i) => ({
+    name,
+    mentions: 2 + ((seed + i * 3) % 6),
+    estimatedRank: i + 1,
+    appearedInQueries: queries.filter((_, qi) => (qi + i + seed) % 2 === 0),
+    targetBusinessAppeared: (seed + i) % 3 !== 0
   }));
+}
+
+function buildQueryResults(input: SnapshotInput, queries: string[], competitors: CompetitorDiscovery[], seed: number): QueryResult[] {
+  const domain = input.websiteUrl.replace(/^https?:\/\//, '').replace('www.', '').split('/')[0].toLowerCase();
+  return queries.map((query, i) => {
+    const targetMentioned = ((seed + i) % 4) !== 0;
+    const websiteReferenced = (seed + i * 7 + domain.length) % 3 !== 1;
+    const sentiment: QueryResult['sentiment'] = ['Negative', 'Neutral', 'Positive'][(seed + i) % 3] as QueryResult['sentiment'];
+    return {
+      query,
+      businessMentioned: targetMentioned,
+      websiteReferenced,
+      competitorsMentioned: competitors.filter((c) => c.appearedInQueries.includes(query)).map((c) => c.name),
+      rankingPosition: 1 + ((seed + i * 5) % 10),
+      sentiment,
+      trustSignals: targetMentioned ? ['Reviews present', 'Location relevance'] : ['Weak citation trail'],
+      source: (i % 2 === 0) ? 'Simulated Search Result' : 'Simulated AI Answer'
+    };
+  });
+}
+
+export function generateMockReport(input: SnapshotInput, dataMode: 'demo' | 'live' = 'demo'): ReportData {
+  const queries = buildQueries(input);
+  const seed = hash(`${input.businessName}|${input.websiteUrl}|${input.city}|${input.state}|${input.industry}|${input.mainKeyword}`);
+  const competitorDiscoveries = discoverCompetitors(input, queries, seed);
+  const queryResults = buildQueryResults(input, queries, competitorDiscoveries, seed);
+
+  const mentionRate = queryResults.filter((q) => q.businessMentioned).length / queryResults.length;
+  const websiteRate = queryResults.filter((q) => q.websiteReferenced).length / queryResults.length;
+  const competitorPressure = competitorDiscoveries.reduce((a, c) => a + c.mentions, 0) / (competitorDiscoveries.length * 8);
+  const reviewSignal = (seed % 100) / 100;
+  const localRelevance = ((input.city.length + input.state.length + input.mainKeyword.length) % 100) / 100;
+  const industryMatch = ((input.industry.length + input.mainKeyword.length) % 100) / 100;
+  const websiteReadiness = ((input.websiteUrl.length + seed) % 100) / 100;
 
   const categoryScores = {
-    'Brand Recognition': Math.round(weights.brandRecognition * 0.58),
-    'AI Answer Presence': Math.round(weights.aiAnswerPresence * 0.52),
-    'Local Market Visibility': Math.round(weights.localMarketVisibility * 0.6),
-    'Competitor Positioning': Math.round(weights.competitorPositioning * 0.5),
-    'Website AI Readiness': Math.round(weights.websiteAiReadiness * 0.7),
-    'Trust / Reputation Signals': Math.round(weights.trustReputationSignals * 0.65)
+    'Brand Recognition': norm(Math.round(weights.brandRecognition * (0.3 + mentionRate * 0.7)), weights.brandRecognition),
+    'AI Answer Presence': norm(Math.round(weights.aiAnswerPresence * (0.2 + mentionRate * 0.6 + websiteRate * 0.2)), weights.aiAnswerPresence),
+    'Local Market Visibility': norm(Math.round(weights.localMarketVisibility * (0.25 + localRelevance * 0.75)), weights.localMarketVisibility),
+    'Competitor Positioning': norm(Math.round(weights.competitorPositioning * (1 - competitorPressure * 0.7)), weights.competitorPositioning),
+    'Website AI Readiness': norm(Math.round(weights.websiteAiReadiness * (0.3 + websiteReadiness * 0.7)), weights.websiteAiReadiness),
+    'Trust / Reputation Signals': norm(Math.round(weights.trustReputationSignals * (0.2 + reviewSignal * 0.5 + industryMatch * 0.3)), weights.trustReputationSignals)
   };
 
-  const { total, label } = computeScore(categoryScores);
+  const { total } = computeScore(categoryScores);
 
   return {
     input,
+    dataMode,
+    dataSourceStatus: dataMode === 'live' ? 'Live AI/search data used' : 'Demo mode: simulated data used until APIs are connected',
     score: total,
-    label,
+    label: labelScore(total),
     categoryScores,
-    summary: `Your business is currently underrepresented in AI-generated answers for high-intent local searches. Potential customers using ChatGPT, Perplexity, Gemini, and other answer engines may be seeing competitor names before ${input.businessName}.`,
-    strengths: ['Credible website baseline and clear service intent.', 'Positive sentiment appears in review-driven prompts.', 'Opportunity to win more citations with schema and authority mentions.'],
-    weaknesses: ['Inconsistent mention coverage in local intent prompts.', 'Competitors appear more often in comparison-style responses.', 'Limited trust signal depth in AI answer summaries.'],
+    summary: `Competitors were discovered automatically based on AI/search-style queries for your market. ${input.businessName} currently appears in ${Math.round(mentionRate * 100)}% of analyzed responses in ${input.city}, ${input.state}.`,
+    strengths: ['Targeted local query coverage can be improved quickly.', `Current website citation rate is ${Math.round(websiteRate * 100)}%.`, 'A structured trust-signal strategy can improve AI recommendation frequency.'],
+    weaknesses: ['Competitor mentions are still dominant in key buyer-intent prompts.', 'Ranking consistency across query types is uneven.', 'Reputation signals are not yet optimized for AI answer engines.'],
     queryResults,
-    competitorTable: competitors.map((name, i) => ({ name, mentionRate: `${70 - i * 12}%`, avgPosition: i + 1, sentiment: i === 0 ? 'Positive' : 'Neutral' })),
-    missedOpportunities: ['No consistent top-3 appearance for “best in city” prompts.', 'Insufficient structured reputation signals across indexed profiles.', 'Weak comparative framing versus named local competitors.'],
+    competitorDiscoveries,
+    competitorTable: competitorDiscoveries.map((c) => ({ name: c.name, mentionRate: `${Math.round((c.mentions / queryResults.length) * 100)}%`, avgPosition: c.estimatedRank, sentiment: c.estimatedRank < 3 ? 'Positive' : 'Neutral' })),
+    missedOpportunities: ['Increase brand mentions in “best in city” prompts.', 'Strengthen website entity signals and service-page relevance.', 'Close competitor gap in comparison and reputation queries.'],
     actionPlan: [
-      { phase: 'Days 1–30', actions: ['Deploy AI-readable service/location pages.', 'Add structured data (Organization, LocalBusiness, FAQ).', 'Standardize NAP and citation consistency.'] },
-      { phase: 'Days 31–60', actions: ['Publish authority content answering buying questions.', 'Launch review velocity campaign and testimonial snippets.', 'Improve internal linking to service intent pages.'] },
-      { phase: 'Days 61–90', actions: ['Run prompt-level visibility re-audit and compare trendlines.', 'Create competitor-gap pages and proof-backed differentiators.', 'Implement AI lead capture workflows and conversion tracking.'] }
+      { phase: 'Days 1–30', actions: ['Add location + service entities with schema.', 'Refine title/meta for service and market terms.', 'Expand trust content with real proof snippets.'] },
+      { phase: 'Days 31–60', actions: ['Publish query-targeted authority content.', 'Increase review velocity and response consistency.', 'Build comparison pages aligned to discovered competitors.'] },
+      { phase: 'Days 61–90', actions: ['Re-run snapshot and track mention-rate gains.', 'Prioritize prompts where target is currently absent.', 'Activate lead-capture automation for AI-driven traffic.'] }
     ],
     cta: 'Want us to improve this score for you? AI Arsenal Activators can help build your AI visibility, automate lead capture, and position your business to appear in more AI-powered recommendations.'
   };

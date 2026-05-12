@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 export default function InputForm() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({ businessName: '', websiteUrl: '', city: '', state: '', industry: '', mainKeyword: '', competitors: '', contactEmail: '' });
+  const [form, setForm] = useState({ businessName: '', websiteUrl: '', city: '', state: '', industry: '', mainKeyword: '', contactEmail: '' });
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -17,5 +17,5 @@ export default function InputForm() {
     router.push('/report');
   };
 
-  return <form onSubmit={onSubmit} className="grid md:grid-cols-2 gap-4">{Object.keys(form).map((k) => <input key={k} required={!['competitors','contactEmail'].includes(k)} placeholder={k.replace(/([A-Z])/g, ' $1')} value={(form as any)[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} className="rounded-lg bg-slate-900 border border-slate-700 p-3" />)}<button className="md:col-span-2 rounded-lg bg-fire px-5 py-3 font-semibold">{loading ? 'Running Snapshot...' : 'Run Snapshot'}</button></form>;
+  return <form onSubmit={onSubmit} className="grid md:grid-cols-2 gap-4">{Object.keys(form).map((k) => <input key={k} required={k !== 'contactEmail'} placeholder={k.replace(/([A-Z])/g, ' $1')} value={(form as Record<string, string>)[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))} className="rounded-lg bg-slate-900 border border-slate-700 p-3" />)}<button className="md:col-span-2 rounded-lg bg-fire px-5 py-3 font-semibold">{loading ? 'Running Snapshot...' : 'Run Snapshot'}</button></form>;
 }
