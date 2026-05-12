@@ -15,7 +15,13 @@ function discoverCompetitors(input: SnapshotInput, queries: string[], seed: numb
     mentions: 2 + ((seed + i * 3) % 6),
     estimatedRank: i + 1,
     appearedInQueries: queries.filter((_, qi) => (qi + i + seed) % 2 === 0),
-    targetBusinessAppeared: (seed + i) % 3 !== 0
+    targetBusinessAppeared: (seed + i) % 3 !== 0,
+    confidenceScore: 55 + ((seed + i * 11) % 40),
+    confidenceReasons: ['Local query co-mentions', 'Service keyword overlap in simulated results'],
+    locationMatch: true,
+    serviceMatch: true,
+    websiteKeywordOverlap: 0.45 + (((seed + i) % 30) / 100),
+    directoryConsistency: 0.5 + (((seed + i * 2) % 35) / 100)
   }));
 }
 
@@ -87,7 +93,7 @@ export function generateReportFromResults(
     ],
     queryResults,
     competitorDiscoveries,
-    competitorTable: competitorDiscoveries.map((c) => ({ name: c.name, mentionRate: `${Math.round((c.mentions / Math.max(1, queryResults.length)) * 100)}%`, avgPosition: c.estimatedRank, sentiment: c.estimatedRank < 3 ? 'Positive' : 'Neutral' })),
+    competitorTable: competitorDiscoveries.map((c) => ({ name: c.name, mentionRate: `${Math.round((c.mentions / Math.max(1, queryResults.length)) * 100)}%`, avgPosition: c.estimatedRank, sentiment: c.estimatedRank < 3 ? 'Positive' : 'Neutral', confidenceScore: c.confidenceScore })),
     missedOpportunities: ['Increase brand mentions in “best in city” prompts.', 'Strengthen website entity signals and service-page relevance.', 'Close competitor gap in comparison and reputation queries.'],
     actionPlan: [
       { phase: 'Days 1–30', actions: ['Add location + service entities with schema.', 'Refine title/meta for service and market terms.', 'Expand trust content with real proof snippets.'] },

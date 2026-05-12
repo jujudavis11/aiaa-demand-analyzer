@@ -25,6 +25,12 @@ export type CompetitorDiscovery = {
   estimatedRank: number;
   appearedInQueries: string[];
   targetBusinessAppeared: boolean;
+  confidenceScore: number;
+  confidenceReasons: string[];
+  locationMatch: boolean;
+  serviceMatch: boolean;
+  websiteKeywordOverlap: number;
+  directoryConsistency: number;
 };
 
 export type ReportData = {
@@ -39,7 +45,7 @@ export type ReportData = {
   weaknesses: string[];
   queryResults: QueryResult[];
   competitorDiscoveries: CompetitorDiscovery[];
-  competitorTable: Array<{ name: string; mentionRate: string; avgPosition: number; sentiment: string }>;
+  competitorTable: Array<{ name: string; mentionRate: string; avgPosition: number; sentiment: string; confidenceScore: number }>;
   missedOpportunities: string[];
   actionPlan: Array<{ phase: string; actions: string[] }>;
   cta: string;

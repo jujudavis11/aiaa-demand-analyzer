@@ -59,6 +59,30 @@ function extractCompetitors(text: string, targetName: string): string[] {
     .map(([name]) => name);
 }
 
+
+function keywordOverlap(candidate: string, input: SnapshotInput): number {
+  const c = normalizeBusinessName(candidate);
+  const tokens = normalizeBusinessName(`${input.mainKeyword} ${input.industry} ${input.city}`).split(' ').filter(Boolean);
+  const hits = tokens.filter((t) => c.includes(t)).length;
+  return hits / Math.max(1, tokens.length);
+}
+
+function computeConfidence(candidate: string, query: string, content: string, citations: string[], input: SnapshotInput): { score: number; reasons: string[]; locationMatch: boolean; serviceMatch: boolean; websiteKeywordOverlap: number; directoryConsistency: number } {
+  const q = query.toLowerCase();
+  const c = content.toLowerCase();
+  const locationMatch = q.includes(input.city.toLowerCase()) || c.includes(input.city.toLowerCase());
+  const serviceMatch = q.includes(input.mainKeyword.toLowerCase()) || q.includes(input.industry.toLowerCase()) || c.includes(input.mainKeyword.toLowerCase());
+  const websiteKeywordOverlap = keywordOverlap(candidate, input);
+  const directoryConsistency = Math.min(1, citations.filter((u) => /yelp|google|bbb|angi|clutch|tripadvisor|healthgrades/i.test(u)).length / 2);
+  const reasons: string[] = [];
+  if (locationMatch) reasons.push('Geographic proximity signal found');
+  if (serviceMatch) reasons.push('Service/category match found');
+  if (websiteKeywordOverlap >= 0.2) reasons.push('Keyword overlap with market terms');
+  if (directoryConsistency > 0) reasons.push('Business directory citations found');
+  const score = Math.round(Math.min(100, 20 + (locationMatch ? 25 : 0) + (serviceMatch ? 25 : 0) + websiteKeywordOverlap * 20 + directoryConsistency * 20));
+  return { score, reasons: reasons.length ? reasons : ['Low-confidence inferred match'], locationMatch, serviceMatch, websiteKeywordOverlap, directoryConsistency };
+}
+
 async function queryPerplexity(apiKey: string, query: string): Promise<{ content: string; citations: string[] }> {
   const messages: PerplexityMessage[] = [
     {
@@ -104,7 +128,7 @@ export async function runPerplexityVisibilityAudit(input: SnapshotInput): Promis
   const targetNorm = normalizeBusinessName(input.businessName);
 
   const queryResults: QueryResult[] = [];
-  const competitorMap = new Map<string, { mentions: number; appearedInQueries: string[]; rankTotal: number; count: number; targetAppeared: number }>();
+  const competitorMap = new Map<string, { mentions: number; appearedInQueries: string[]; rankTotal: number; count: number; targetAppeared: number; confidenceTotal: number; reasons: string[]; locationHits: number; serviceHits: number; overlapTotal: number; directoryTotal: number }>();
 
   for (const [idx, query] of queries.entries()) {
     const { content, citations } = await queryPerplexity(apiKey, query);
@@ -114,11 +138,18 @@ export async function runPerplexityVisibilityAudit(input: SnapshotInput): Promis
     const competitors = extractCompetitors(content, input.businessName);
 
     competitors.forEach((name, i) => {
-      const prev = competitorMap.get(name) || { mentions: 0, appearedInQueries: [], rankTotal: 0, count: 0, targetAppeared: 0 };
+      const confidence = computeConfidence(name, query, content, citations, input);
+      const prev = competitorMap.get(name) || { mentions: 0, appearedInQueries: [], rankTotal: 0, count: 0, targetAppeared: 0, confidenceTotal: 0, reasons: [], locationHits: 0, serviceHits: 0, overlapTotal: 0, directoryTotal: 0 };
       prev.mentions += 1;
       prev.appearedInQueries.push(query);
       prev.rankTotal += i + 1;
       prev.count += 1;
+      prev.confidenceTotal += confidence.score;
+      prev.reasons.push(...confidence.reasons);
+      prev.locationHits += confidence.locationMatch ? 1 : 0;
+      prev.serviceHits += confidence.serviceMatch ? 1 : 0;
+      prev.overlapTotal += confidence.websiteKeywordOverlap;
+      prev.directoryTotal += confidence.directoryConsistency;
       if (businessMentioned) prev.targetAppeared += 1;
       competitorMap.set(name, prev);
     });
@@ -144,7 +175,13 @@ export async function runPerplexityVisibilityAudit(input: SnapshotInput): Promis
       mentions: val.mentions,
       estimatedRank: Math.max(1, Math.round(val.rankTotal / Math.max(1, val.count))),
       appearedInQueries: Array.from(new Set(val.appearedInQueries)),
-      targetBusinessAppeared: val.targetAppeared > 0
+      targetBusinessAppeared: val.targetAppeared > 0,
+      confidenceScore: Math.round(val.confidenceTotal / Math.max(1, val.count)),
+      confidenceReasons: Array.from(new Set(val.reasons)).slice(0, 4),
+      locationMatch: val.locationHits / Math.max(1, val.count) >= 0.5,
+      serviceMatch: val.serviceHits / Math.max(1, val.count) >= 0.5,
+      websiteKeywordOverlap: Number((val.overlapTotal / Math.max(1, val.count)).toFixed(2)),
+      directoryConsistency: Number((val.directoryTotal / Math.max(1, val.count)).toFixed(2))
     }))
     .sort((a, b) => b.mentions - a.mentions)
     .slice(0, 8);
