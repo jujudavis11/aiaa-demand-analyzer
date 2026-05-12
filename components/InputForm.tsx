@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 
 export default function InputForm() {
@@ -8,7 +8,7 @@ export default function InputForm() {
   const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({ businessName: '', websiteUrl: '', city: '', state: '', industry: '', mainKeyword: '', competitors: '', contactEmail: '' });
 
-  const onSubmit = async (e: React.FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setLoading(true);
     const res = await fetch('/api/generate-report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
