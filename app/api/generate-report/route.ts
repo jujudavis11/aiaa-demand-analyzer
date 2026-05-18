@@ -1,26 +1,20 @@
 import { NextResponse } from 'next/server';
 import { generateMockReport, generateReportFromResults } from '@/lib/mockAuditData';
-import { runPerplexityVisibilityAudit } from '@/lib/perplexity';
+import { buildResultsFromManualEvidence } from '@/lib/manualEvidence';
 import { SnapshotInput } from '@/lib/types';
-
-const hasLiveKeys = Boolean(process.env.PERPLEXITY_API_KEY);
-const DATA_MODE: 'demo' | 'live' = hasLiveKeys ? 'live' : 'demo';
 
 export async function POST(req: Request) {
   const input = (await req.json()) as SnapshotInput;
+  const hasManualEvidence = Boolean(input.evidenceEntries?.some((e) => e.response?.trim()));
 
-  if (DATA_MODE === 'live') {
-    try {
-      const { queryResults, competitorDiscoveries } = await runPerplexityVisibilityAudit(input);
-      const liveReport = generateReportFromResults(input, queryResults, competitorDiscoveries, 'live');
-      liveReport.dataSourceStatus = 'Live Mode: Perplexity data used';
-      return NextResponse.json(liveReport);
-    } catch (error) {
-      console.error('Perplexity live mode failed, falling back to demo mode.', error);
-    }
+  if (hasManualEvidence) {
+    const { queryResults, competitorDiscoveries } = buildResultsFromManualEvidence(input);
+    const manualReport = generateReportFromResults(input, queryResults, competitorDiscoveries, 'manual');
+    manualReport.dataSourceStatus = 'Manual evidence mode: report built from pasted platform outputs';
+    return NextResponse.json(manualReport);
   }
 
   const demoReport = generateMockReport(input, 'demo');
-  demoReport.dataSourceStatus = 'Demo Mode: Simulated data used';
+  demoReport.dataSourceStatus = 'Demo Mode: Simulated data used (add manual evidence to use real pasted results)';
   return NextResponse.json(demoReport);
 }

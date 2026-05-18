@@ -6,6 +6,7 @@ export type SnapshotInput = {
   industry: string;
   mainKeyword: string;
   contactEmail?: string;
+  evidenceEntries?: Array<{ platform: string; prompt: string; response: string }>;
 };
 
 export type QueryResult = {
@@ -35,7 +36,7 @@ export type CompetitorDiscovery = {
 
 export type ReportData = {
   input: SnapshotInput;
-  dataMode: 'demo' | 'live';
+  dataMode: 'demo' | 'live' | 'manual';
   dataSourceStatus: string;
   score: number;
   label: string;
